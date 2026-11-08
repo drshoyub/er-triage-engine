@@ -97,7 +97,7 @@ if 'db' not in st.session_state:
         "Wait_Time_Mins": [45, 30, 15]
     })
 
-# 4. Executive Analytics Dashboard (Visible across all portals for hospital oversight)
+# 4. Executive Analytics Dashboard
 st.markdown("### 📊 Live Department Metrics")
 m1, m2, m3 = st.columns(3)
 
@@ -119,6 +119,21 @@ st.divider()
 if portal == "ER Dashboard (Physician)":
     if is_authenticated and st.session_state.er_auth:
         st.subheader("🚨 ER Physician Waiting Room & Floor Management")
+        
+        # NEW: Imaging & Authorization Status Overview Row
+        st.markdown("#### 🩻 Department Imaging & Authorization Tracking")
+        imaging_status_rows = []
+        for pid in st.session_state.db["Patient_ID"]:
+            if pid in st.session_state.patient_scans:
+                rec = st.session_state.patient_scans[pid]
+                status_text = f"✅ Authorized & Signed Off ({rec['signed_by']})"
+            else:
+                status_text = "⏳ Preliminary / Pending Sign-Off"
+            imaging_status_rows.append({"Patient_ID": pid, "Scan & Authorization Status": status_text})
+        
+        st.dataframe(pd.DataFrame(imaging_status_rows), use_container_width=True, hide_index=True)
+        st.divider()
+
         col1, col2 = st.columns(2)
 
         with col1:
@@ -166,6 +181,7 @@ ER Physician E-Signature: {er_signature}
                 type="primary"
             )
 
+        st.subheader("Active Waitlist Queue")
         st.dataframe(st.session_state.db, use_container_width=True)
     else:
         st.warning("🔒 Access Restricted. Please enter the correct ER Physician password (`er2026`) in the sidebar.")
@@ -177,7 +193,6 @@ elif portal == "ER Waiting Room (Triage Nurse)":
     if is_authenticated and st.session_state.nurse_auth:
         st.subheader("📋 Triage Nurse Intake & Queue Control")
         
-        # Triage nurses can run initial queue scans or log intake details
         if st.button("⚡ Run Automated Intake Priority Check"):
             st.session_state.db.loc[0, "Triage_Level"] = "Critical"
             st.session_state.db = st.session_state.db.sort_values(by="Triage_Level")
