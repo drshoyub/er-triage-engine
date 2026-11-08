@@ -16,15 +16,12 @@ if 'db' not in st.session_state:
         "Wait_Time_Mins": [45, 30, 15]
     })
 
-# 3. Clinical AI - DICOM Viewer Integration (Upgrade 1)
+# 3. Clinical AI - DICOM Viewer Integration
 st.markdown("### 🩻 Clinical AI: Secure Imaging Upload")
 uploaded_file = st.file_uploader("Upload a raw DICOM (.dcm) file for AI analysis", type=["dcm"])
 
 if uploaded_file is not None:
-    # Read the clinical DICOM file
     dicom_data = pydicom.dcmread(uploaded_file)
-    
-    # Extract the raw pixel data and normalize it for the web
     image_array = dicom_data.pixel_array
     image_array = image_array - np.min(image_array)
     image_array = image_array / np.max(image_array)
@@ -45,7 +42,7 @@ if uploaded_file is not None:
 
 st.divider()
 
-# 4. Live Dashboard & Report Export (Upgrade 3)
+# 4. Live Dashboard & Dynamic Report Export
 st.subheader("Live ER Waiting Room")
 col1, col2 = st.columns(2)
 
@@ -53,24 +50,32 @@ with col1:
     if st.button("🚨 Run AI Triage Scan on Waitlist"):
         st.session_state.db.loc[0, "Triage_Level"] = "Critical"
         st.session_state.db = st.session_state.db.sort_values(by="Triage_Level")
-        st.rerun() # Refreshes the queue
+        st.rerun()
 
 with col2:
-    # Generate the standardized text for the report
-    report_content = """🏥 CLINICAL DISCHARGE & TRIAGE SUMMARY
+    # Create a dropdown menu using the Patient IDs from the database
+    patient_list = st.session_state.db["Patient_ID"].tolist()
+    selected_patient = st.selectbox("Select Patient for Discharge:", patient_list)
+    
+    # Pull the exact row of data for the chosen patient
+    patient_data = st.session_state.db[st.session_state.db["Patient_ID"] == selected_patient].iloc[0]
+    
+    # Dynamically inject the data into the report template
+    report_content = f"""🏥 CLINICAL DISCHARGE & TRIAGE SUMMARY
 ======================================
-Patient ID: DXB-001
-Diagnosis: Acute Pneumonia
-AI Findings: Right lower lobe consolidation (94.2% confidence)
-Plan: Pulmonology Consult & Broad-spectrum antibiotics.
+Patient ID: {patient_data['Patient_ID']}
+Chief Complaint: {patient_data['Chief_Complaint']}
+Triage Status: {patient_data['Triage_Level'].upper()}
+Wait Time: {patient_data['Wait_Time_Mins']} mins
 ======================================
 [ ] Pending Attending Signature
 """
-    # Streamlit component to instantly download a file
+    
+    # The download button now updates its filename based on the dropdown choice
     st.download_button(
-        label="📥 Export Clinical Report (.txt)",
+        label=f"📥 Export Report ({selected_patient})",
         data=report_content,
-        file_name="DXB-001_Discharge_Report.txt",
+        file_name=f"{selected_patient}_Discharge_Report.txt",
         mime="text/plain",
         type="primary"
     )
