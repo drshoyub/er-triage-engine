@@ -13,7 +13,7 @@ with st.sidebar:
     user_role = st.radio("Select User Role:", ["Attending Physician", "Triage Nurse", "Hospital Executive"])
     st.divider()
     st.success(f"Logged in as: {user_role}")
-    st.caption("DHA Law No. 11: Local Processing ACTIVE")
+    
 
 st.title("Automated Radiology Triage Engine")
 
