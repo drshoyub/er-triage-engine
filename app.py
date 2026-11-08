@@ -6,15 +6,27 @@ import numpy as np
 # 1. Page Configuration
 st.set_page_config(page_title="ER Triage AI", page_icon="🏥", layout="wide")
 
-# 2. Role-Based Access Control (Security Upgrade)
+# 2. Role-Based Access Control & Authentication
 with st.sidebar:
     st.subheader("🔐 System Login")
     user_role = st.radio("Select User Role:", ["Attending Physician", "Triage Nurse", "Hospital Executive"])
     
-    # Capture the physician's name dynamically
+    # Initialize authentication states
+    is_authenticated = False
     doctor_name = ""
+    
+    # Password gating specifically for the Physician role
     if user_role == "Attending Physician":
-        doctor_name = st.text_input("Physician Name:", "Dr. Shaik")
+        password = st.text_input("Enter Physician Password:", type="password")
+        if password == "dxb2026": 
+            is_authenticated = True
+            doctor_name = st.text_input("Physician Name:", "Dr. Shaik")
+            st.success("Authentication successful.")
+        elif password:
+            st.error("Incorrect password.")
+    else:
+        # Nurse and Executive views are left open
+        is_authenticated = True 
 
     st.divider()
     st.success(f"Logged in as: {user_role}")
@@ -48,8 +60,8 @@ with m3:
 
 st.divider()
 
-# 5. Clinical AI - DICOM Viewer (Restricted Access)
-if user_role == "Attending Physician":
+# 5. Clinical AI - DICOM Viewer (Password Restricted)
+if user_role == "Attending Physician" and is_authenticated:
     st.markdown("### 🩻 Clinical AI: Secure Imaging Upload")
     uploaded_file = st.file_uploader("Upload a raw DICOM (.dcm) file for AI analysis", type=["dcm"])
 
@@ -73,28 +85,30 @@ if user_role == "Attending Physician":
             st.write(f"- **AI Confidence:** 94.2%")
             st.write("- **Recommendation:** Escalate Patient ID DXB-001 in waitlist.")
     st.divider()
+elif user_role == "Attending Physician" and not is_authenticated:
+    st.warning("Please enter your password in the sidebar to securely access clinical imaging tools.")
+    st.divider()
 
 # 6. Live Dashboard & Dynamic Report Export
 st.subheader("Live ER Waiting Room")
 col1, col2 = st.columns(2)
 
 with col1:
-    if user_role in ["Triage Nurse", "Attending Physician"]:
+    if user_role in ["Triage Nurse", "Attending Physician"] and is_authenticated:
         if st.button("🚨 Run AI Triage Scan on Waitlist"):
             st.session_state.db.loc[0, "Triage_Level"] = "Critical"
             st.session_state.db = st.session_state.db.sort_values(by="Triage_Level")
             st.rerun()
-    else:
+    elif user_role == "Hospital Executive":
         st.info("Executive View: Triage simulation tools locked.")
 
 with col2:
-    if user_role == "Attending Physician":
+    if user_role == "Attending Physician" and is_authenticated:
         patient_list = st.session_state.db["Patient_ID"].tolist()
         selected_patient = st.selectbox("Select Patient for Discharge:", patient_list)
         
         patient_data = st.session_state.db[st.session_state.db["Patient_ID"] == selected_patient].iloc[0]
         
-        # The signature line now updates automatically based on the sidebar input
         signature_line = f"Electronically Signed By: {doctor_name}" if doctor_name else "[ ] Pending Attending Signature"
         
         report_content = f"""🏥 CLINICAL DISCHARGE & TRIAGE SUMMARY
