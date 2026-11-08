@@ -17,7 +17,6 @@ if 'report_signed_by' not in st.session_state:
 # 2. Department Navigation & Separated Logins
 with st.sidebar:
     st.subheader("🏥 Department Navigation")
-    # This splits the app into two completely separate department views
     portal = st.radio("Select Portal:", ["ER Dashboard", "Radiology Portal (PACS)"])
     st.divider()
     
@@ -44,7 +43,7 @@ with st.sidebar:
                 st.rerun()
             st.success("Authentication successful.")
 
-    # ER DASHBOARD LOGIN (Open for Nurse/Exec)
+    # ER DASHBOARD LOGIN
     elif portal == "ER Dashboard":
         st.subheader("👤 ER Staff Login")
         user_role = st.radio("Select ER Role:", ["Triage Nurse", "Hospital Executive"])
@@ -62,7 +61,7 @@ if 'db' not in st.session_state:
         "Wait_Time_Mins": [45, 30, 15]
     })
 
-# 4. Executive Analytics Dashboard (Visible in both portals)
+# 4. Executive Analytics Dashboard
 st.markdown("### 📊 Live Department Metrics")
 m1, m2, m3 = st.columns(3)
 
@@ -137,7 +136,6 @@ elif portal == "ER Dashboard":
             
             patient_data = st.session_state.db[st.session_state.db["Patient_ID"] == selected_patient].iloc[0]
             
-            # The ER Nurse pulls the data that the Radiologist signed off on in the other portal
             radiology_findings = st.session_state.signed_off_report if st.session_state.signed_off_report else "[No Imaging Signed Off]"
             signature = st.session_state.report_signed_by if st.session_state.report_signed_by else "[ ] Pending Signature"
             
@@ -155,4 +153,11 @@ Radiology E-Signature: {signature}
 Discharging Nurse: [Pending]
 """
             st.download_button(
-                label=f
+                label=f"📥 Export Finalized Report ({selected_patient})",
+                data=report_content,
+                file_name=f"{selected_patient}_Discharge_Report.txt",
+                mime="text/plain",
+                type="primary"
+            )
+
+    st.dataframe(st.session_state.db, use_container_width=True)
