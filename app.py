@@ -6,44 +6,50 @@ import numpy as np
 # 1. Page Configuration
 st.set_page_config(page_title="ER Triage AI", page_icon="🏥", layout="wide")
 
-# Initialize authentication memory
+# Initialize memory states for authentication and clinical workflow
 if 'physician_auth' not in st.session_state:
     st.session_state.physician_auth = False
+if 'signed_off_report' not in st.session_state:
+    st.session_state.signed_off_report = None
+if 'report_signed_by' not in st.session_state:
+    st.session_state.report_signed_by = ""
 
-# 2. Role-Based Access Control & Authentication
+# 2. Department Navigation & Separated Logins
 with st.sidebar:
-    st.subheader("🔐 System Login")
-    user_role = st.radio("Select User Role:", ["Attending Physician", "Triage Nurse", "Hospital Executive"])
+    st.subheader("🏥 Department Navigation")
+    # This splits the app into two completely separate department views
+    portal = st.radio("Select Portal:", ["ER Dashboard", "Radiology Portal (PACS)"])
+    st.divider()
     
-    # Automatically lock the system if they switch away from the Physician role
-    if user_role != "Attending Physician":
-        st.session_state.physician_auth = False
-    
-    is_authenticated = False
+    user_role = ""
     doctor_name = ""
-    
-    if user_role == "Attending Physician":
-        # If not logged in yet, show the password box
+    is_authenticated = False
+
+    # RADIOLOGY LOGIN (Isolated)
+    if portal == "Radiology Portal (PACS)":
+        st.subheader("🔐 Radiologist Login")
         if not st.session_state.physician_auth:
-            password = st.text_input("Enter Physician Password:", type="password")
+            password = st.text_input("Enter Radiologist Password:", type="password")
             if password == "dxb2026": 
                 st.session_state.physician_auth = True
-                st.rerun()  # Instantly refreshes the screen to hide the password box
+                st.rerun()
             elif password:
                 st.error("Incorrect password.")
-        # If logged in, hide the password box and show the name input
         else:
             is_authenticated = True
-            doctor_name = st.text_input("Physician Name:", "Dr. Shaik")
+            user_role = "Radiologist"
+            doctor_name = st.text_input("Radiologist Name:", "Dr. Shaik")
+            if st.button("Logout"):
+                st.session_state.physician_auth = False
+                st.rerun()
             st.success("Authentication successful.")
-    else:
-        # Nurse and Executive views are left open
-        is_authenticated = True 
 
-    st.divider()
-    st.success(f"Logged in as: {user_role}")
-    if doctor_name:
-        st.info(f"Active User: {doctor_name}")
+    # ER DASHBOARD LOGIN (Open for Nurse/Exec)
+    elif portal == "ER Dashboard":
+        st.subheader("👤 ER Staff Login")
+        user_role = st.radio("Select ER Role:", ["Triage Nurse", "Hospital Executive"])
+        is_authenticated = True 
+        st.success(f"Active Role: {user_role}")
 
 st.title("Automated Triage Engine")
 
@@ -56,7 +62,7 @@ if 'db' not in st.session_state:
         "Wait_Time_Mins": [45, 30, 15]
     })
 
-# 4. Executive Analytics Dashboard
+# 4. Executive Analytics Dashboard (Visible in both portals)
 st.markdown("### 📊 Live Department Metrics")
 m1, m2, m3 = st.columns(3)
 
@@ -72,72 +78,81 @@ with m3:
 
 st.divider()
 
-# 5. Clinical AI - DICOM Viewer (Password Restricted)
-if user_role == "Attending Physician" and is_authenticated:
-    st.markdown("### 🩻 Clinical AI: Secure Imaging Upload")
-    uploaded_file = st.file_uploader("Upload a raw DICOM (.dcm) file for AI analysis", type=["dcm"])
+# 5. RADIOLOGY PORTAL VIEW
+if portal == "Radiology Portal (PACS)":
+    if is_authenticated:
+        st.markdown("### 🩻 Clinical AI: Diagnostic Review Gateway")
+        uploaded_file = st.file_uploader("Upload a raw DICOM (.dcm) file for Patient DXB-001", type=["dcm"])
 
-    if uploaded_file is not None:
-        dicom_data = pydicom.dcmread(uploaded_file)
-        image_array = dicom_data.pixel_array
-        image_array = image_array - np.min(image_array)
-        image_array = image_array / np.max(image_array)
-        image_array = (image_array * 255).astype(np.uint8)
+        if uploaded_file is not None:
+            dicom_data = pydicom.dcmread(uploaded_file)
+            image_array = dicom_data.pixel_array
+            image_array = image_array - np.min(image_array)
+            image_array = image_array / np.max(image_array)
+            image_array = (image_array * 255).astype(np.uint8)
 
-        colA, colB = st.columns([1, 1])
-        
-        with colA:
-            st.image(image_array, caption="Source: Local PACS", use_container_width=True)
+            colA, colB = st.columns([1, 1])
             
-        with colB:
-            st.warning("🚨 AI ALERT: Anomaly Detected")
-            st.write("**Extracted DICOM Metadata:**")
-            st.write(f"- **Modality:** {getattr(dicom_data, 'Modality', 'Unknown')}")
-            st.write(f"- **Body Part:** {getattr(dicom_data, 'BodyPartExamined', 'Unknown')}")
-            st.write(f"- **AI Confidence:** 94.2%")
-            st.write("- **Recommendation:** Escalate Patient ID DXB-001 in waitlist.")
-    st.divider()
-elif user_role == "Attending Physician" and not is_authenticated:
-    st.warning("Please enter your password in the sidebar to securely access clinical imaging tools.")
-    st.divider()
+            with colA:
+                st.image(image_array, caption="Source: Local PACS", use_container_width=True)
+                
+            with colB:
+                st.warning("🚨 AI Preliminary Draft (Requires Human Review)")
+                ai_draft = f"""Modality: {getattr(dicom_data, 'Modality', 'Unknown')}
+Body Part: {getattr(dicom_data, 'BodyPartExamined', 'Unknown')}
+AI Findings: High-contrast opacity detected. 94.2% confidence of acute anomaly.
+AI Recommendation: Escalate triage status."""
 
-# 6. Live Dashboard & Dynamic Report Export
-st.subheader("Live ER Waiting Room")
-col1, col2 = st.columns(2)
+                with st.form("radiologist_signoff_form"):
+                    st.write("**Radiologist Over-read:**")
+                    final_clinical_notes = st.text_area("Review and edit AI findings before finalizing:", value=ai_draft, height=150)
+                    
+                    submitted = st.form_submit_button("Approve & Sign Off Document")
+                    
+                    if submitted:
+                        st.session_state.signed_off_report = final_clinical_notes
+                        st.session_state.report_signed_by = doctor_name
+                        st.success(f"Report officially signed off by {doctor_name}. Transmitted to ER.")
+    else:
+        st.warning("Please enter your password in the sidebar to securely access clinical imaging tools.")
 
-with col1:
-    if user_role in ["Triage Nurse", "Attending Physician"] and is_authenticated:
-        if st.button("🚨 Run AI Triage Scan on Waitlist"):
-            st.session_state.db.loc[0, "Triage_Level"] = "Critical"
-            st.session_state.db = st.session_state.db.sort_values(by="Triage_Level")
-            st.rerun()
-    elif user_role == "Hospital Executive":
-        st.info("Executive View: Triage simulation tools locked.")
+# 6. ER DASHBOARD VIEW
+elif portal == "ER Dashboard":
+    st.subheader("Live ER Waiting Room")
+    col1, col2 = st.columns(2)
 
-with col2:
-    if user_role == "Attending Physician" and is_authenticated:
-        patient_list = st.session_state.db["Patient_ID"].tolist()
-        selected_patient = st.selectbox("Select Patient for Discharge:", patient_list)
-        
-        patient_data = st.session_state.db[st.session_state.db["Patient_ID"] == selected_patient].iloc[0]
-        
-        signature_line = f"Electronically Signed By: {doctor_name}" if doctor_name else "[ ] Pending Attending Signature"
-        
-        report_content = f"""🏥 CLINICAL DISCHARGE & TRIAGE SUMMARY
+    with col1:
+        if user_role == "Triage Nurse":
+            if st.button("🚨 Run AI Triage Scan on Waitlist"):
+                st.session_state.db.loc[0, "Triage_Level"] = "Critical"
+                st.session_state.db = st.session_state.db.sort_values(by="Triage_Level")
+                st.rerun()
+        else:
+            st.info("Executive View: Triage simulation tools locked.")
+
+    with col2:
+        if user_role == "Triage Nurse":
+            patient_list = st.session_state.db["Patient_ID"].tolist()
+            selected_patient = st.selectbox("Select Patient for Discharge:", patient_list)
+            
+            patient_data = st.session_state.db[st.session_state.db["Patient_ID"] == selected_patient].iloc[0]
+            
+            # The ER Nurse pulls the data that the Radiologist signed off on in the other portal
+            radiology_findings = st.session_state.signed_off_report if st.session_state.signed_off_report else "[No Imaging Signed Off]"
+            signature = st.session_state.report_signed_by if st.session_state.report_signed_by else "[ ] Pending Signature"
+            
+            report_content = f"""🏥 CLINICAL DISCHARGE & TRIAGE SUMMARY
 ======================================
 Patient ID: {patient_data['Patient_ID']}
 Chief Complaint: {patient_data['Chief_Complaint']}
 Triage Status: {patient_data['Triage_Level'].upper()}
 Wait Time: {patient_data['Wait_Time_Mins']} mins
-======================================
-{signature_line}
-"""
-        st.download_button(
-            label=f"📥 Export Report ({selected_patient})",
-            data=report_content,
-            file_name=f"{selected_patient}_Discharge_Report.txt",
-            mime="text/plain",
-            type="primary"
-        )
 
-st.dataframe(st.session_state.db, use_container_width=True)
+--- RADIOLOGY OVER-READ ---
+{radiology_findings}
+======================================
+Radiology E-Signature: {signature}
+Discharging Nurse: [Pending]
+"""
+            st.download_button(
+                label=f
