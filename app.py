@@ -51,3 +51,62 @@ if user_role == "Attending Physician":
 
     if uploaded_file is not None:
         dicom_data = pydicom.dcmread(uploaded_file)
+        image_array = dicom_data.pixel_array
+        image_array = image_array - np.min(image_array)
+        image_array = image_array / np.max(image_array)
+        image_array = (image_array * 255).astype(np.uint8)
+
+        colA, colB = st.columns([1, 1])
+        
+        with colA:
+            st.image(image_array, caption="Source: Local PACS", use_container_width=True)
+            
+        with colB:
+            st.warning("🚨 AI ALERT: Anomaly Detected")
+            st.write("**Extracted DICOM Metadata:**")
+            st.write(f"- **Modality:** {getattr(dicom_data, 'Modality', 'Unknown')}")
+            st.write(f"- **Body Part:** {getattr(dicom_data, 'BodyPartExamined', 'Unknown')}")
+            st.write(f"- **AI Confidence:** 94.2%")
+            st.write("- **Recommendation:** Escalate Patient ID DXB-001 in waitlist.")
+    st.divider()
+
+# 6. Live Dashboard & Dynamic Report Export
+st.subheader("Live ER Waiting Room")
+col1, col2 = st.columns(2)
+
+with col1:
+    # Restrict workflow buttons so executives can't accidentally alter clinical data
+    if user_role in ["Triage Nurse", "Attending Physician"]:
+        if st.button("🚨 Run AI Triage Scan on Waitlist"):
+            st.session_state.db.loc[0, "Triage_Level"] = "Critical"
+            st.session_state.db = st.session_state.db.sort_values(by="Triage_Level")
+            st.rerun()
+    else:
+        st.info("Executive View: Triage simulation tools locked.")
+
+with col2:
+    # Only physicians can generate and sign discharge paperwork
+    if user_role == "Attending Physician":
+        patient_list = st.session_state.db["Patient_ID"].tolist()
+        selected_patient = st.selectbox("Select Patient for Discharge:", patient_list)
+        
+        patient_data = st.session_state.db[st.session_state.db["Patient_ID"] == selected_patient].iloc[0]
+        
+        report_content = f"""🏥 CLINICAL DISCHARGE & TRIAGE SUMMARY
+======================================
+Patient ID: {patient_data['Patient_ID']}
+Chief Complaint: {patient_data['Chief_Complaint']}
+Triage Status: {patient_data['Triage_Level'].upper()}
+Wait Time: {patient_data['Wait_Time_Mins']} mins
+======================================
+[ ] Pending Attending Signature
+"""
+        st.download_button(
+            label=f"📥 Export Report ({selected_patient})",
+            data=report_content,
+            file_name=f"{selected_patient}_Discharge_Report.txt",
+            mime="text/plain",
+            type="primary"
+        )
+
+st.dataframe(st.session_state.db, use_container_width=True)
