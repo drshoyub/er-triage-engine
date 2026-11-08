@@ -6,7 +6,7 @@ import numpy as np
 # 1. Page Configuration
 st.set_page_config(page_title="ER Triage AI", page_icon="🏥", layout="wide")
 
-# Initialize memory states for authentication across all three roles
+# Initialize memory states for authentication and patient scan mapping
 if 'radiology_auth' not in st.session_state:
     st.session_state.radiology_auth = False
 if 'er_auth' not in st.session_state:
@@ -15,6 +15,8 @@ if 'nurse_auth' not in st.session_state:
     st.session_state.nurse_auth = False
 if 'patient_scans' not in st.session_state:
     st.session_state.patient_scans = {}
+if 'previous_portal' not in st.session_state:
+    st.session_state.previous_portal = None
 
 # 2. Strict Portal & Three-Tier Password Navigation
 with st.sidebar:
@@ -27,6 +29,15 @@ with st.sidebar:
             "Radiology PACS (Radiologist)"
         ]
     )
+    
+    # AUTOMATIC LOGOUT: If the user changes the portal dropdown, reset all auth states instantly
+    if st.session_state.previous_portal != portal:
+        st.session_state.er_auth = False
+        st.session_state.nurse_auth = False
+        st.session_state.radiology_auth = False
+        st.session_state.previous_portal = portal
+        st.rerun()
+
     st.divider()
     
     is_authenticated = False
@@ -120,7 +131,7 @@ if portal == "ER Dashboard (Physician)":
     if is_authenticated and st.session_state.er_auth:
         st.subheader("🚨 ER Physician Waiting Room & Floor Management")
         
-        # NEW: Imaging & Authorization Status Overview Row
+        # Imaging & Authorization Status Overview Row
         st.markdown("#### 🩻 Department Imaging & Authorization Tracking")
         imaging_status_rows = []
         for pid in st.session_state.db["Patient_ID"]:
