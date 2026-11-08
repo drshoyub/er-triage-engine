@@ -6,13 +6,12 @@ import numpy as np
 # 1. Page Configuration
 st.set_page_config(page_title="ER Triage AI", page_icon="🏥", layout="wide")
 
-# Initialize memory states for authentication and clinical workflow
+# Initialize memory states for authentication, workflows, and image storage
 if 'physician_auth' not in st.session_state:
     st.session_state.physician_auth = False
-if 'signed_off_report' not in st.session_state:
-    st.session_state.signed_off_report = None
-if 'report_signed_by' not in st.session_state:
-    st.session_state.report_signed_by = ""
+if 'patient_scans' not in st.session_state:
+    # Stores uploaded scans and sign-off data mapped to patient IDs
+    st.session_state.patient_scans = {}
 
 # 2. Department Navigation & Separated Logins
 with st.sidebar:
@@ -81,7 +80,12 @@ st.divider()
 if portal == "Radiology Portal (PACS)":
     if is_authenticated:
         st.markdown("### 🩻 Clinical AI: Diagnostic Review Gateway")
-        uploaded_file = st.file_uploader("Upload a raw DICOM (.dcm) file for Patient DXB-001", type=["dcm"])
+        
+        # Let the radiologist choose which patient they are evaluating from the active queue
+        patient_list = st.session_state.db["Patient_ID"].tolist()
+        target_patient = st.selectbox("Select Patient to Attach Scan:", patient_list)
+        
+        uploaded_file = st.file_uploader(f"Upload raw DICOM (.dcm) file for {target_patient}", type=["dcm"])
 
         if uploaded_file is not None:
             dicom_data = pydicom.dcmread(uploaded_file)
@@ -93,7 +97,7 @@ if portal == "Radiology Portal (PACS)":
             colA, colB = st.columns([1, 1])
             
             with colA:
-                st.image(image_array, caption="Source: Local PACS", use_container_width=True)
+                st.image(image_array, caption=f"Source: Local PACS — {target_patient}", use_container_width=True)
                 
             with colB:
                 st.warning("🚨 AI Preliminary Draft (Requires Human Review)")
@@ -102,16 +106,20 @@ Body Part: {getattr(dicom_data, 'BodyPartExamined', 'Unknown')}
 AI Findings: High-contrast opacity detected. 94.2% confidence of acute anomaly.
 AI Recommendation: Escalate triage status."""
 
-                with st.form("radiologist_signoff_form"):
-                    st.write("**Radiologist Over-read:**")
-                    final_clinical_notes = st.text_area("Review and edit AI findings before finalizing:", value=ai_draft, height=150)
+                with st.form(f"form_{target_patient}"):
+                    st.write(f"**Radiologist Over-read for {target_patient}:**")
+                    final_clinical_notes = st.text_area("Review and edit AI findings:", value=ai_draft, height=150)
                     
-                    submitted = st.form_submit_button("Approve & Sign Off Document")
+                    submitted = st.form_submit_button("Approve & Sign Off Scan")
                     
                     if submitted:
-                        st.session_state.signed_off_report = final_clinical_notes
-                        st.session_state.report_signed_by = doctor_name
-                        st.success(f"Report officially signed off by {doctor_name}. Transmitted to ER.")
+                        # Map this specific scan and report to this specific patient ID
+                        st.session_state.patient_scans[target_patient] = {
+                            "image": image_array,
+                            "report": final_clinical_notes,
+                            "signed_by": doctor_name
+                        }
+                        st.success(f"Scan and report for {target_patient} signed off by {doctor_name}.")
     else:
         st.warning("Please enter your password in the sidebar to securely access clinical imaging tools.")
 
@@ -136,8 +144,16 @@ elif portal == "ER Dashboard":
             
             patient_data = st.session_state.db[st.session_state.db["Patient_ID"] == selected_patient].iloc[0]
             
-            radiology_findings = st.session_state.signed_off_report if st.session_state.signed_off_report else "[No Imaging Signed Off]"
-            signature = st.session_state.report_signed_by if st.session_state.report_signed_by else "[ ] Pending Signature"
+            # Check if this specific patient has a reviewed scan attached
+            patient_record = st.session_state.patient_scans.get(selected_patient)
+            
+            if patient_record:
+                radiology_findings = patient_record["report"]
+                signature = patient_record["signed_by"]
+                st.image(patient_record["image"], caption=f"Attached PACS Scan for {selected_patient}", width=300)
+            else:
+                radiology_findings = "[No Imaging Uploaded or Signed Off Yet]"
+                signature = "[ ] Pending Signature"
             
             report_content = f"""🏥 CLINICAL DISCHARGE & TRIAGE SUMMARY
 ======================================
