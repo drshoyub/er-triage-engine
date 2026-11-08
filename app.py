@@ -6,24 +6,36 @@ import numpy as np
 # 1. Page Configuration
 st.set_page_config(page_title="ER Triage AI", page_icon="🏥", layout="wide")
 
+# Initialize authentication memory
+if 'physician_auth' not in st.session_state:
+    st.session_state.physician_auth = False
+
 # 2. Role-Based Access Control & Authentication
 with st.sidebar:
     st.subheader("🔐 System Login")
     user_role = st.radio("Select User Role:", ["Attending Physician", "Triage Nurse", "Hospital Executive"])
     
-    # Initialize authentication states
+    # Automatically lock the system if they switch away from the Physician role
+    if user_role != "Attending Physician":
+        st.session_state.physician_auth = False
+    
     is_authenticated = False
     doctor_name = ""
     
-    # Password gating specifically for the Physician role
     if user_role == "Attending Physician":
-        password = st.text_input("Enter Physician Password:", type="password")
-        if password == "dxb2026": 
+        # If not logged in yet, show the password box
+        if not st.session_state.physician_auth:
+            password = st.text_input("Enter Physician Password:", type="password")
+            if password == "dxb2026": 
+                st.session_state.physician_auth = True
+                st.rerun()  # Instantly refreshes the screen to hide the password box
+            elif password:
+                st.error("Incorrect password.")
+        # If logged in, hide the password box and show the name input
+        else:
             is_authenticated = True
             doctor_name = st.text_input("Physician Name:", "Dr. Shaik")
             st.success("Authentication successful.")
-        elif password:
-            st.error("Incorrect password.")
     else:
         # Nurse and Executive views are left open
         is_authenticated = True 
