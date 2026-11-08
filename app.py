@@ -9,13 +9,19 @@ st.set_page_config(page_title="ER Triage AI", page_icon="🏥", layout="wide")
 # 2. Role-Based Access Control (Security Upgrade)
 with st.sidebar:
     st.subheader("🔐 System Login")
-    # This radio button simulates different hospital staff logging in
     user_role = st.radio("Select User Role:", ["Attending Physician", "Triage Nurse", "Hospital Executive"])
+    
+    # Capture the physician's name dynamically
+    doctor_name = ""
+    if user_role == "Attending Physician":
+        doctor_name = st.text_input("Physician Name:", "Dr. Shaik")
+
     st.divider()
     st.success(f"Logged in as: {user_role}")
-    
+    if doctor_name:
+        st.info(f"Active User: {doctor_name}")
 
-st.title("Automated Radiology Triage Engine")
+st.title("Automated Triage Engine")
 
 # 3. Setup the Database
 if 'db' not in st.session_state:
@@ -26,11 +32,10 @@ if 'db' not in st.session_state:
         "Wait_Time_Mins": [45, 30, 15]
     })
 
-# 4. Executive Analytics Dashboard (Business Upgrade)
+# 4. Executive Analytics Dashboard
 st.markdown("### 📊 Live Department Metrics")
 m1, m2, m3 = st.columns(3)
 
-# Calculate live metrics directly from the Pandas dataframe
 avg_wait = int(st.session_state.db["Wait_Time_Mins"].mean())
 critical_count = len(st.session_state.db[st.session_state.db["Triage_Level"] == "Critical"])
 
@@ -44,7 +49,6 @@ with m3:
 st.divider()
 
 # 5. Clinical AI - DICOM Viewer (Restricted Access)
-# The image uploader is now completely hidden unless a doctor is logged in
 if user_role == "Attending Physician":
     st.markdown("### 🩻 Clinical AI: Secure Imaging Upload")
     uploaded_file = st.file_uploader("Upload a raw DICOM (.dcm) file for AI analysis", type=["dcm"])
@@ -75,7 +79,6 @@ st.subheader("Live ER Waiting Room")
 col1, col2 = st.columns(2)
 
 with col1:
-    # Restrict workflow buttons so executives can't accidentally alter clinical data
     if user_role in ["Triage Nurse", "Attending Physician"]:
         if st.button("🚨 Run AI Triage Scan on Waitlist"):
             st.session_state.db.loc[0, "Triage_Level"] = "Critical"
@@ -85,12 +88,14 @@ with col1:
         st.info("Executive View: Triage simulation tools locked.")
 
 with col2:
-    # Only physicians can generate and sign discharge paperwork
     if user_role == "Attending Physician":
         patient_list = st.session_state.db["Patient_ID"].tolist()
         selected_patient = st.selectbox("Select Patient for Discharge:", patient_list)
         
         patient_data = st.session_state.db[st.session_state.db["Patient_ID"] == selected_patient].iloc[0]
+        
+        # The signature line now updates automatically based on the sidebar input
+        signature_line = f"Electronically Signed By: {doctor_name}" if doctor_name else "[ ] Pending Attending Signature"
         
         report_content = f"""🏥 CLINICAL DISCHARGE & TRIAGE SUMMARY
 ======================================
@@ -99,7 +104,7 @@ Chief Complaint: {patient_data['Chief_Complaint']}
 Triage Status: {patient_data['Triage_Level'].upper()}
 Wait Time: {patient_data['Wait_Time_Mins']} mins
 ======================================
-[ ] Pending Attending Signature
+{signature_line}
 """
         st.download_button(
             label=f"📥 Export Report ({selected_patient})",
