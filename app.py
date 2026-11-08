@@ -6,24 +6,33 @@ import numpy as np
 # 1. Page Configuration
 st.set_page_config(page_title="ER Triage AI", page_icon="🏥", layout="wide")
 
-# Initialize memory states for authentication and patient scan mapping
+# Initialize memory states for authentication across all three roles
 if 'radiology_auth' not in st.session_state:
     st.session_state.radiology_auth = False
 if 'er_auth' not in st.session_state:
     st.session_state.er_auth = False
+if 'nurse_auth' not in st.session_state:
+    st.session_state.nurse_auth = False
 if 'patient_scans' not in st.session_state:
     st.session_state.patient_scans = {}
 
-# 2. Strict Portal & Dual-Password Navigation
+# 2. Strict Portal & Three-Tier Password Navigation
 with st.sidebar:
     st.subheader("🏥 System Navigation")
-    portal = st.selectbox("Select Department Portal:", ["ER Dashboard (Physician)", "Radiology PACS (Radiologist)"])
+    portal = st.selectbox(
+        "Select Department Portal:", 
+        [
+            "ER Dashboard (Physician)", 
+            "ER Waiting Room (Triage Nurse)", 
+            "Radiology PACS (Radiologist)"
+        ]
+    )
     st.divider()
     
     is_authenticated = False
     active_user = ""
 
-    # PORTAL A: ER DASHBOARD (Password Gated for ER Physicians)
+    # PORTAL 1: ER PHYSICIAN (Password: er2026)
     if portal == "ER Dashboard (Physician)":
         st.subheader("🔐 ER Physician Access")
         if not st.session_state.er_auth:
@@ -41,7 +50,25 @@ with st.sidebar:
                 st.rerun()
             st.success("Authenticated: ER Physician Active")
 
-    # PORTAL B: RADIOLOGY PACS (Password Gated for Radiologists)
+    # PORTAL 2: TRIAGE NURSE (Password: nurse2026)
+    elif portal == "ER Waiting Room (Triage Nurse)":
+        st.subheader("🔐 Triage Nurse Access")
+        if not st.session_state.nurse_auth:
+            nurse_password = st.text_input("Enter Nurse Password:", type="password", key="nurse_pass")
+            if nurse_password == "nurse2026": 
+                st.session_state.nurse_auth = True
+                st.rerun()
+            elif nurse_password:
+                st.error("Incorrect password.")
+        else:
+            is_authenticated = True
+            active_user = st.text_input("Nurse Name:", "Nurse Sarah", key="nurse_name")
+            if st.button("Logout Nurse Portal", key="logout_nurse"):
+                st.session_state.nurse_auth = False
+                st.rerun()
+            st.success("Authenticated: Triage Nurse Active")
+
+    # PORTAL 3: RADIOLOGIST (Password: dxb2026)
     elif portal == "Radiology PACS (Radiologist)":
         st.subheader("🔐 Radiologist Access")
         if not st.session_state.radiology_auth:
@@ -70,7 +97,7 @@ if 'db' not in st.session_state:
         "Wait_Time_Mins": [45, 30, 15]
     })
 
-# 4. Executive Analytics Dashboard (Visible across both for hospital oversight)
+# 4. Executive Analytics Dashboard (Visible across all portals for hospital oversight)
 st.markdown("### 📊 Live Department Metrics")
 m1, m2, m3 = st.columns(3)
 
@@ -87,9 +114,85 @@ with m3:
 st.divider()
 
 # ==========================================
-# PORTAL 1: RADIOLOGY PACS (Password: dxb2026)
+# PORTAL 1: ER DASHBOARD (Password: er2026)
 # ==========================================
-if portal == "Radiology PACS (Radiologist)":
+if portal == "ER Dashboard (Physician)":
+    if is_authenticated and st.session_state.er_auth:
+        st.subheader("🚨 ER Physician Waiting Room & Floor Management")
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("🚨 Run AI Triage Scan on Waitlist"):
+                st.session_state.db.loc[0, "Triage_Level"] = "Critical"
+                st.session_state.db = st.session_state.db.sort_values(by="Triage_Level")
+                st.rerun()
+
+        with col2:
+            patient_list = st.session_state.db["Patient_ID"].tolist()
+            selected_patient = st.selectbox("Select Patient for Discharge Summary:", patient_list)
+            
+            patient_data = st.session_state.db[st.session_state.db["Patient_ID"] == selected_patient].iloc[0]
+            
+            patient_record = st.session_state.patient_scans.get(selected_patient)
+            
+            if patient_record:
+                radiology_findings = patient_record["report"]
+                rad_signature = patient_record["signed_by"]
+                st.image(patient_record["image"], caption=f"PACS Scan Clearance for {selected_patient}", width=250)
+            else:
+                radiology_findings = "[Waiting for Radiology Over-Read / Sign-Off]"
+                rad_signature = "[ ] Pending Radiology Signature"
+            
+            er_signature = f"Electronically Signed By: {active_user}" if active_user else "[ ] Pending ER Physician Signature"
+
+            report_content = f"""🏥 CLINICAL DISCHARGE & TRIAGE SUMMARY
+======================================
+Patient ID: {patient_data['Patient_ID']}
+Chief Complaint: {patient_data['Chief_Complaint']}
+Triage Status: {patient_data['Triage_Level'].upper()}
+Wait Time: {patient_data['Wait_Time_Mins']} mins
+
+--- RADIOLOGY OVER-READ ---
+{radiology_findings}
+======================================
+Radiology E-Signature: {rad_signature}
+ER Physician E-Signature: {er_signature}
+"""
+            st.download_button(
+                label=f"📥 Export Finalized Report ({selected_patient})",
+                data=report_content,
+                file_name=f"{selected_patient}_Discharge_Report.txt",
+                mime="text/plain",
+                type="primary"
+            )
+
+        st.dataframe(st.session_state.db, use_container_width=True)
+    else:
+        st.warning("🔒 Access Restricted. Please enter the correct ER Physician password (`er2026`) in the sidebar.")
+
+# ==========================================
+# PORTAL 2: TRIAGE NURSE (Password: nurse2026)
+# ==========================================
+elif portal == "ER Waiting Room (Triage Nurse)":
+    if is_authenticated and st.session_state.nurse_auth:
+        st.subheader("📋 Triage Nurse Intake & Queue Control")
+        
+        # Triage nurses can run initial queue scans or log intake details
+        if st.button("⚡ Run Automated Intake Priority Check"):
+            st.session_state.db.loc[0, "Triage_Level"] = "Critical"
+            st.session_state.db = st.session_state.db.sort_values(by="Triage_Level")
+            st.success("Queue re-prioritized based on vital signs and intake rules.")
+            st.rerun()
+
+        st.info(f"Logged in Intake Specialist: {active_user}")
+        st.dataframe(st.session_state.db, use_container_width=True)
+    else:
+        st.warning("🔒 Access Restricted. Please enter the correct Triage Nurse password (`nurse2026`) in the sidebar.")
+
+# ==========================================
+# PORTAL 3: RADIOLOGY PACS (Password: dxb2026)
+# ==========================================
+elif portal == "Radiology PACS (Radiologist)":
     if is_authenticated and st.session_state.radiology_auth:
         st.markdown("### 🩻 Radiology PACS: Diagnostic Review Gateway")
         
@@ -132,61 +235,3 @@ AI Recommendation: Escalate triage status."""
                         st.success(f"Scan and report for {target_patient} signed off by {active_user}.")
     else:
         st.warning("🔒 Access Restricted. Please enter the correct Radiologist password (`dxb2026`) in the sidebar.")
-
-# ==========================================
-# PORTAL 2: ER DASHBOARD (Password: er2026)
-# ==========================================
-elif portal == "ER Dashboard (Physician)":
-    if is_authenticated and st.session_state.er_auth:
-        st.subheader("🚨 ER Physician Waiting Room & Floor Management")
-        col1, col2 = st.columns(2)
-
-        with col1:
-            if st.button("🚨 Run AI Triage Scan on Waitlist"):
-                st.session_state.db.loc[0, "Triage_Level"] = "Critical"
-                st.session_state.db = st.session_state.db.sort_values(by="Triage_Level")
-                st.rerun()
-
-        with col2:
-            patient_list = st.session_state.db["Patient_ID"].tolist()
-            selected_patient = st.selectbox("Select Patient for Discharge Summary:", patient_list)
-            
-            patient_data = st.session_state.db[st.session_state.db["Patient_ID"] == selected_patient].iloc[0]
-            
-            # Pull data signed off by the radiologist
-            patient_record = st.session_state.patient_scans.get(selected_patient)
-            
-            if patient_record:
-                radiology_findings = patient_record["report"]
-                rad_signature = patient_record["signed_by"]
-                st.image(patient_record["image"], caption=f"PACS Scan Clearance for {selected_patient}", width=250)
-            else:
-                radiology_findings = "[Waiting for Radiology Over-Read / Sign-Off]"
-                rad_signature = "[ ] Pending Radiology Signature"
-            
-            er_signature = f"Electronically Signed By: {active_user}" if active_user else "[ ] Pending ER Physician Signature"
-
-            report_content = f"""🏥 CLINICAL DISCHARGE & TRIAGE SUMMARY
-======================================
-Patient ID: {patient_data['Patient_ID']}
-Chief Complaint: {patient_data['Chief_Complaint']}
-Triage Status: {patient_data['Triage_Level'].upper()}
-Wait Time: {patient_data['Wait_Time_Mins']} mins
-
---- RADIOLOGY OVER-READ ---
-{radiology_findings}
-======================================
-Radiology E-Signature: {rad_signature}
-ER Physician E-Signature: {er_signature}
-"""
-            st.download_button(
-                label=f"📥 Export Finalized Report ({selected_patient})",
-                data=report_content,
-                file_name=f"{selected_patient}_Discharge_Report.txt",
-                mime="text/plain",
-                type="primary"
-            )
-
-        st.dataframe(st.session_state.db, use_container_width=True)
-    else:
-        st.warning("🔒 Access Restricted. Please enter the correct ER Physician password (`er2026`) in the sidebar.")
