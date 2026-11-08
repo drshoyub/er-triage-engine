@@ -6,50 +6,60 @@ import numpy as np
 # 1. Page Configuration
 st.set_page_config(page_title="ER Triage AI", page_icon="🏥", layout="wide")
 
-# Initialize memory states for authentication, workflows, and image storage
-if 'physician_auth' not in st.session_state:
-    st.session_state.physician_auth = False
+# Initialize memory states for authentication and patient scan mapping
+if 'radiology_auth' not in st.session_state:
+    st.session_state.radiology_auth = False
+if 'er_auth' not in st.session_state:
+    st.session_state.er_auth = False
 if 'patient_scans' not in st.session_state:
-    # Stores uploaded scans and sign-off data mapped to patient IDs
     st.session_state.patient_scans = {}
 
-# 2. Department Navigation & Separated Logins
+# 2. Strict Portal & Dual-Password Navigation
 with st.sidebar:
-    st.subheader("🏥 Department Navigation")
-    portal = st.radio("Select Portal:", ["ER Dashboard", "Radiology Portal (PACS)"])
+    st.subheader("🏥 System Navigation")
+    portal = st.selectbox("Select Department Portal:", ["ER Dashboard (Physician)", "Radiology PACS (Radiologist)"])
     st.divider()
     
-    user_role = ""
-    doctor_name = ""
     is_authenticated = False
+    active_user = ""
 
-    # RADIOLOGY LOGIN (Isolated)
-    if portal == "Radiology Portal (PACS)":
-        st.subheader("🔐 Radiologist Login")
-        if not st.session_state.physician_auth:
-            password = st.text_input("Enter Radiologist Password:", type="password")
-            if password == "dxb2026": 
-                st.session_state.physician_auth = True
+    # PORTAL A: ER DASHBOARD (Password Gated for ER Physicians)
+    if portal == "ER Dashboard (Physician)":
+        st.subheader("🔐 ER Physician Access")
+        if not st.session_state.er_auth:
+            er_password = st.text_input("Enter ER Physician Password:", type="password", key="er_pass")
+            if er_password == "er2026": 
+                st.session_state.er_auth = True
                 st.rerun()
-            elif password:
+            elif er_password:
                 st.error("Incorrect password.")
         else:
             is_authenticated = True
-            user_role = "Radiologist"
-            doctor_name = st.text_input("Radiologist Name:", "Dr. Shaik")
-            if st.button("Logout"):
-                st.session_state.physician_auth = False
+            active_user = st.text_input("ER Physician Name:", "Dr. Shaik (ER)", key="er_name")
+            if st.button("Logout ER Portal", key="logout_er"):
+                st.session_state.er_auth = False
                 st.rerun()
-            st.success("Authentication successful.")
+            st.success("Authenticated: ER Physician Active")
 
-    # ER DASHBOARD LOGIN
-    elif portal == "ER Dashboard":
-        st.subheader("👤 ER Staff Login")
-        user_role = st.radio("Select ER Role:", ["Triage Nurse", "Hospital Executive"])
-        is_authenticated = True 
-        st.success(f"Active Role: {user_role}")
+    # PORTAL B: RADIOLOGY PACS (Password Gated for Radiologists)
+    elif portal == "Radiology PACS (Radiologist)":
+        st.subheader("🔐 Radiologist Access")
+        if not st.session_state.radiology_auth:
+            rad_password = st.text_input("Enter Radiologist Password:", type="password", key="rad_pass")
+            if rad_password == "dxb2026": 
+                st.session_state.radiology_auth = True
+                st.rerun()
+            elif rad_password:
+                st.error("Incorrect password.")
+        else:
+            is_authenticated = True
+            active_user = st.text_input("Radiologist Name:", "Dr. Shaik (Rad)", key="rad_name")
+            if st.button("Logout Radiology Portal", key="logout_rad"):
+                st.session_state.radiology_auth = False
+                st.rerun()
+            st.success("Authenticated: Radiologist Active")
 
-st.title("Automated Triage Engine")
+st.title("Automated Triage & Radiology Engine")
 
 # 3. Setup the Database
 if 'db' not in st.session_state:
@@ -60,7 +70,7 @@ if 'db' not in st.session_state:
         "Wait_Time_Mins": [45, 30, 15]
     })
 
-# 4. Executive Analytics Dashboard
+# 4. Executive Analytics Dashboard (Visible across both for hospital oversight)
 st.markdown("### 📊 Live Department Metrics")
 m1, m2, m3 = st.columns(3)
 
@@ -76,12 +86,13 @@ with m3:
 
 st.divider()
 
-# 5. RADIOLOGY PORTAL VIEW
-if portal == "Radiology Portal (PACS)":
-    if is_authenticated:
-        st.markdown("### 🩻 Clinical AI: Diagnostic Review Gateway")
+# ==========================================
+# PORTAL 1: RADIOLOGY PACS (Password: dxb2026)
+# ==========================================
+if portal == "Radiology PACS (Radiologist)":
+    if is_authenticated and st.session_state.radiology_auth:
+        st.markdown("### 🩻 Radiology PACS: Diagnostic Review Gateway")
         
-        # Let the radiologist choose which patient they are evaluating from the active queue
         patient_list = st.session_state.db["Patient_ID"].tolist()
         target_patient = st.selectbox("Select Patient to Attach Scan:", patient_list)
         
@@ -113,48 +124,48 @@ AI Recommendation: Escalate triage status."""
                     submitted = st.form_submit_button("Approve & Sign Off Scan")
                     
                     if submitted:
-                        # Map this specific scan and report to this specific patient ID
                         st.session_state.patient_scans[target_patient] = {
                             "image": image_array,
                             "report": final_clinical_notes,
-                            "signed_by": doctor_name
+                            "signed_by": active_user
                         }
-                        st.success(f"Scan and report for {target_patient} signed off by {doctor_name}.")
+                        st.success(f"Scan and report for {target_patient} signed off by {active_user}.")
     else:
-        st.warning("Please enter your password in the sidebar to securely access clinical imaging tools.")
+        st.warning("🔒 Access Restricted. Please enter the correct Radiologist password (`dxb2026`) in the sidebar.")
 
-# 6. ER DASHBOARD VIEW
-elif portal == "ER Dashboard":
-    st.subheader("Live ER Waiting Room")
-    col1, col2 = st.columns(2)
+# ==========================================
+# PORTAL 2: ER DASHBOARD (Password: er2026)
+# ==========================================
+elif portal == "ER Dashboard (Physician)":
+    if is_authenticated and st.session_state.er_auth:
+        st.subheader("🚨 ER Physician Waiting Room & Floor Management")
+        col1, col2 = st.columns(2)
 
-    with col1:
-        if user_role == "Triage Nurse":
+        with col1:
             if st.button("🚨 Run AI Triage Scan on Waitlist"):
                 st.session_state.db.loc[0, "Triage_Level"] = "Critical"
                 st.session_state.db = st.session_state.db.sort_values(by="Triage_Level")
                 st.rerun()
-        else:
-            st.info("Executive View: Triage simulation tools locked.")
 
-    with col2:
-        if user_role == "Triage Nurse":
+        with col2:
             patient_list = st.session_state.db["Patient_ID"].tolist()
-            selected_patient = st.selectbox("Select Patient for Discharge:", patient_list)
+            selected_patient = st.selectbox("Select Patient for Discharge Summary:", patient_list)
             
             patient_data = st.session_state.db[st.session_state.db["Patient_ID"] == selected_patient].iloc[0]
             
-            # Check if this specific patient has a reviewed scan attached
+            # Pull data signed off by the radiologist
             patient_record = st.session_state.patient_scans.get(selected_patient)
             
             if patient_record:
                 radiology_findings = patient_record["report"]
-                signature = patient_record["signed_by"]
-                st.image(patient_record["image"], caption=f"Attached PACS Scan for {selected_patient}", width=300)
+                rad_signature = patient_record["signed_by"]
+                st.image(patient_record["image"], caption=f"PACS Scan Clearance for {selected_patient}", width=250)
             else:
-                radiology_findings = "[No Imaging Uploaded or Signed Off Yet]"
-                signature = "[ ] Pending Signature"
+                radiology_findings = "[Waiting for Radiology Over-Read / Sign-Off]"
+                rad_signature = "[ ] Pending Radiology Signature"
             
+            er_signature = f"Electronically Signed By: {active_user}" if active_user else "[ ] Pending ER Physician Signature"
+
             report_content = f"""🏥 CLINICAL DISCHARGE & TRIAGE SUMMARY
 ======================================
 Patient ID: {patient_data['Patient_ID']}
@@ -165,8 +176,8 @@ Wait Time: {patient_data['Wait_Time_Mins']} mins
 --- RADIOLOGY OVER-READ ---
 {radiology_findings}
 ======================================
-Radiology E-Signature: {signature}
-Discharging Nurse: [Pending]
+Radiology E-Signature: {rad_signature}
+ER Physician E-Signature: {er_signature}
 """
             st.download_button(
                 label=f"📥 Export Finalized Report ({selected_patient})",
@@ -176,4 +187,6 @@ Discharging Nurse: [Pending]
                 type="primary"
             )
 
-    st.dataframe(st.session_state.db, use_container_width=True)
+        st.dataframe(st.session_state.db, use_container_width=True)
+    else:
+        st.warning("🔒 Access Restricted. Please enter the correct ER Physician password (`er2026`) in the sidebar.")
